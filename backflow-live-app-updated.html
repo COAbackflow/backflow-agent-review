@@ -6,7 +6,6 @@
 <title>Backflow Agent Review</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
-<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
 <style>
   :root{
     --bg:#0B1F33;
@@ -111,7 +110,6 @@
     <div class="tabs" style="margin-bottom:12px;">
       <div class="subtab active" data-subtab="single">Single clause</div>
       <div class="subtab" data-subtab="bulk">Bulk add (TCEQ only)</div>
-      <div class="subtab" data-subtab="pdf">Upload PDF</div>
     </div>
 
     <div class="subpanel active" id="subpanel-single">
@@ -154,24 +152,6 @@ Third section's text goes here..."></textarea>
     </div>
     <div class="results" id="bulkResults"></div>
     </div>
-
-    <div class="subpanel" id="subpanel-pdf">
-    <div class="card">
-      <label for="pdfSource">Source</label>
-      <select id="pdfSource">
-        <option value="TCEQ">TCEQ (public domain — safe to auto-extract)</option>
-        <option value="IPC">IPC 2021 §608 (read-only — review carefully)</option>
-        <option value="ASSE">ASSE standard (read-only — review carefully)</option>
-      </select>
-      <div style="height:10px"></div>
-      <label for="pdfFile">PDF file</label>
-      <input type="file" id="pdfFile" accept="application/pdf" style="width:100%; background:var(--panel-2); border:1px solid var(--line); border-radius:8px; color:var(--text); padding:10px 12px; font-family:var(--sans); font-size:13px;">
-      <div class="note" id="pdfStatus" style="margin-top:10px;"></div>
-      <div class="note">Text-based PDFs only — scanned/image PDFs won't extract. For IPC/ASSE, everything found defaults to <strong>unchecked</strong> below — review and select only what you've confirmed matters before adding.</div>
-    </div>
-    <div id="pdfReviewCard"></div>
-    </div>
-
   </div>
 
 </main>
@@ -252,112 +232,7 @@ document.getElementById('runBulkBtn').addEventListener('click', async ()=>{
   toast(failed ? `Finished with ${failed} failure(s)` : 'All sections added', !failed);
 });
 
-// ---- PDF upload + extraction ----
-if (window['pdfjsLib']) {
-  pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
-}
-
-async function extractPdfText(file){
-  const arrayBuffer = await file.arrayBuffer();
-  const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
-  let fullText = '';
-  for(let i = 1; i <= pdf.numPages; i++){
-    const page = await pdf.getPage(i);
-    const content = await page.getTextContent();
-    const pageText = content.items.map(item => item.str).join(' ');
-    fullText += pageText + '\n\n';
-    document.getElementById('pdfStatus').textContent = `Extracting text... page ${i} of ${pdf.numPages}`;
-  }
-  return fullText;
-}
-
-let pdfExtractedItems = [];
-
-function renderPdfReview(items, sourceBody){
-  const card = document.getElementById('pdfReviewCard');
-  if(items.length === 0){
-    card.innerHTML = `<div class="result-card"><div class="result-body">No cross-connection-relevant sections were found in this PDF.</div></div>`;
-    return;
-  }
-  const defaultChecked = sourceBody === 'TCEQ';
-  const rows = items.map((item, i) => `
-    <div style="padding:12px 14px; border-bottom:1px solid var(--line); display:flex; gap:10px; align-items:flex-start;">
-      <input type="checkbox" data-idx="${i}" class="pdf-check" ${defaultChecked ? 'checked' : ''} style="margin-top:3px;">
-      <div style="flex:1;">
-        <div style="font-family:var(--mono); font-size:12px; color:var(--orange); margin-bottom:4px;">${item.section_ref}</div>
-        <div style="font-size:13px; color:#D6E1EC; line-height:1.5;">${item.content}</div>
-      </div>
-    </div>
-  `).join('');
-  card.innerHTML = `
-    <div class="result-card">
-      <div class="result-head">
-        <span class="result-name">${items.length} sections found — review before adding</span>
-        <span class="result-badge">${defaultChecked ? 'TCEQ: all pre-checked' : 'review required'}</span>
-      </div>
-      <div>${rows}</div>
-      <div style="padding:14px;">
-        <button class="run-btn secondary" id="addSelectedPdfBtn">Add selected to library</button>
-      </div>
-    </div>
-  `;
-  document.getElementById('addSelectedPdfBtn').addEventListener('click', async ()=>{
-    const checked = Array.from(document.querySelectorAll('.pdf-check:checked')).map(el => items[el.dataset.idx]);
-    if(checked.length === 0){ toast('No sections selected', false); return; }
-    const btn = document.getElementById('addSelectedPdfBtn');
-    btn.disabled = true;
-    let done = 0, failed = 0;
-    for(const item of checked){
-      btn.textContent = `Adding ${done + 1} of ${checked.length}...`;
-      try{
-        const res = await fetch(`${FUNCTIONS_BASE}/ingest-reference`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ source_body: sourceBody, section_ref: item.section_ref, content: item.content })
-        });
-        const data = await res.json();
-        if(!res.ok || data.error) throw new Error(data.error || `HTTP ${res.status}`);
-      }catch(e){ failed++; }
-      done++;
-    }
-    btn.disabled = false;
-    btn.textContent = 'Add selected to library';
-    toast(failed ? `Added with ${failed} failure(s)` : `Added ${checked.length} sections`, !failed);
-  });
-}
-
-document.getElementById('pdfFile').addEventListener('change', async (e)=>{
-  const file = e.target.files[0];
-  if(!file) return;
-  const sourceBody = document.getElementById('pdfSource').value;
-  const statusEl = document.getElementById('pdfStatus');
-  document.getElementById('pdfReviewCard').innerHTML = '';
-
-  try{
-    statusEl.textContent = 'Reading PDF...';
-    const text = await extractPdfText(file);
-    if(!text.trim()){
-      statusEl.textContent = 'No extractable text found — this may be a scanned/image PDF.';
-      return;
-    }
-    statusEl.textContent = `Extracted ${text.length.toLocaleString()} characters. Analyzing for cross-connection content (this can take a minute for long documents)...`;
-
-    const res = await fetch(`${FUNCTIONS_BASE}/extract-sections`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ source_body: sourceBody, text })
-    });
-    const data = await res.json();
-    if(!res.ok || data.error) throw new Error(data.error || `HTTP ${res.status}`);
-
-    pdfExtractedItems = data.results || [];
-    statusEl.textContent = `Done — analyzed ${data.chunks_processed} section(s) of the document, found ${pdfExtractedItems.length} relevant passage(s).`;
-    renderPdfReview(pdfExtractedItems, sourceBody);
-  }catch(err){
-    statusEl.textContent = 'Error: ' + err.message;
-    toast('PDF processing failed', false);
-  }
-});
+// tabs
 document.querySelectorAll('.tab').forEach(tab=>{
   tab.addEventListener('click', ()=>{
     document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));
