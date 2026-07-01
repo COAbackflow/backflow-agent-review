@@ -1,0 +1,271 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Backflow Agent Review</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg:#0B1F33;
+    --panel:#102841;
+    --panel-2:#0E2238;
+    --line:#1E3A56;
+    --text:#E7EDF3;
+    --muted:#8AA6BC;
+    --orange:#E8853D;
+    --orange-dim:#7A4A24;
+    --green:#52B788;
+    --amber:#D9A441;
+    --red:#E85A41;
+    --mono:'JetBrains Mono', monospace;
+    --sans:'Inter', sans-serif;
+  }
+  *{box-sizing:border-box;}
+  body{margin:0;background:var(--bg);color:var(--text);font-family:var(--sans);-webkit-font-smoothing:antialiased;padding-bottom:60px;}
+  header{padding:28px 20px 18px;border-bottom:1px solid var(--line);}
+  .eyebrow{font-family:var(--mono);font-size:11px;letter-spacing:0.12em;text-transform:uppercase;color:var(--orange);margin-bottom:6px;}
+  h1{font-size:21px;margin:0 0 6px;font-weight:700;letter-spacing:-0.01em;}
+  .sub{color:var(--muted);font-size:13.5px;line-height:1.55;max-width:68ch;}
+  .status-line{display:flex;align-items:center;gap:6px;margin-top:10px;font-family:var(--mono);font-size:11px;color:var(--muted);}
+  .status-dot{width:7px;height:7px;border-radius:50%;background:var(--green);}
+  main{padding:18px 20px;max-width:900px;}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:16px;margin-bottom:16px;}
+  label{display:block;font-family:var(--mono);font-size:11px;letter-spacing:0.06em;text-transform:uppercase;color:var(--muted);margin-bottom:6px;}
+  textarea, input[type=text], select{width:100%;background:var(--panel-2);border:1px solid var(--line);border-radius:8px;color:var(--text);padding:10px 12px;font-family:var(--sans);font-size:14px;resize:vertical;}
+  textarea:focus, input:focus, select:focus{outline:none;border-color:var(--orange);}
+  .presets{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px;}
+  .preset-btn{background:var(--panel-2);border:1px solid var(--line);color:var(--muted);font-family:var(--mono);font-size:11px;padding:6px 10px;border-radius:999px;cursor:pointer;}
+  .preset-btn:hover{border-color:var(--orange); color:var(--text);}
+  .run-btn{width:100%;background:var(--orange);color:#1A0E04;border:none;border-radius:8px;padding:13px;font-family:var(--sans);font-weight:700;font-size:15px;cursor:pointer;margin-top:14px;}
+  .run-btn:disabled{background:var(--orange-dim);color:#9c8266;cursor:not-allowed;}
+  .run-btn.secondary{background:var(--panel-2);color:var(--text);border:1px solid var(--line);}
+  .run-btn.secondary:hover{border-color:var(--orange);}
+  .field-row{display:grid;grid-template-columns:1fr;gap:10px;}
+  .note{font-size:12px;color:var(--muted);line-height:1.5;margin-top:10px;}
+  .results{display:grid;grid-template-columns:1fr;gap:14px;}
+  .result-card{background:var(--panel);border:1px solid var(--line);border-radius:10px;overflow:hidden;}
+  .result-card.final{border-color:var(--orange);}
+  .result-card.final.flagged{border-color:var(--red);}
+  .result-head{display:flex;align-items:center;justify-content:space-between;padding:12px 14px;border-bottom:1px solid var(--line);background:var(--panel-2);}
+  .result-name{font-family:var(--mono);font-weight:700;font-size:13px;}
+  .result-card.final .result-name{color:var(--orange);}
+  .result-card.final.flagged .result-name{color:var(--red);}
+  .result-badge{font-family:var(--mono);font-size:10px;padding:3px 8px;border-radius:999px;background:rgba(82,183,136,0.15);color:var(--green);}
+  .result-badge.pending{background:rgba(217,164,65,0.15); color:var(--amber);}
+  .result-badge.error{background:rgba(232,90,65,0.15); color:var(--red);}
+  .result-body{padding:14px;font-size:13.5px;line-height:1.6;white-space:pre-wrap;color:#D6E1EC;}
+  .flag-banner{background:rgba(232,90,65,0.12);border-bottom:1px solid var(--red);color:#F5B4A6;padding:12px 14px;font-size:13px;font-weight:600;}
+  .spinner{display:inline-block;width:11px; height:11px;border:2px solid rgba(217,164,65,0.3);border-top-color:var(--amber);border-radius:50%;animation:spin 0.7s linear infinite;margin-right:6px;vertical-align:middle;}
+  @keyframes spin{to{transform:rotate(360deg);}}
+  .toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:10px 16px;font-size:13px;font-family:var(--mono);opacity:0;pointer-events:none;transition:opacity 0.2s;}
+  .toast.show{opacity:1;}
+  .toast.ok{border-color:var(--green); color:var(--green);}
+  .toast.err{border-color:var(--red); color:var(--red);}
+  .tabs{display:flex;gap:4px;margin-bottom:16px;background:var(--panel-2);border-radius:8px;padding:4px;border:1px solid var(--line);}
+  .tab{flex:1;text-align:center;padding:9px;font-family:var(--mono);font-size:12px;border-radius:6px;cursor:pointer;color:var(--muted);}
+  .tab.active{background:var(--orange);color:#1A0E04;font-weight:700;}
+  .panel{display:none;}
+  .panel.active{display:block;}
+</style>
+</head>
+<body>
+
+<header>
+  <div class="eyebrow">Backflow Check Pro / live pipeline</div>
+  <h1>Backflow Agent Review</h1>
+  <div class="sub">Talks directly to your deployed Supabase project. Add reference clauses once, they stay saved forever — every scenario after that retrieves automatically.</div>
+  <div class="status-line"><span class="status-dot"></span>Connected to uzcgwzibwhubxftyhwvu.supabase.co</div>
+</header>
+
+<main>
+
+  <div class="tabs">
+    <div class="tab active" data-tab="review">Run a scenario</div>
+    <div class="tab" data-tab="ingest">Add reference clause</div>
+  </div>
+
+  <div class="panel active" id="panel-review">
+    <div class="card">
+      <label for="scenario">Scenario</label>
+      <textarea id="scenario" rows="5">A backflow prevention assembly protecting against a health hazard was installed six months ago and has not yet been tested. Is this a compliance issue, and what testing frequency applies?</textarea>
+      <div class="presets">
+        <button class="preset-btn" data-i="0">Dishwasher chem injection</button>
+        <button class="preset-btn" data-i="1">Commercial softener DCVA vs RPZ</button>
+        <button class="preset-btn" data-i="2">Overdue annual test</button>
+      </div>
+      <button class="run-btn" id="runReviewBtn">Run four-agent review</button>
+    </div>
+
+    <div class="results" id="reviewResults"></div>
+  </div>
+
+  <div class="panel" id="panel-ingest">
+    <div class="card">
+      <label for="ingestBody">Source</label>
+      <select id="ingestBody">
+        <option value="TCEQ">TCEQ</option>
+        <option value="IPC">IPC 2021 §608</option>
+        <option value="ASSE">ASSE standard</option>
+      </select>
+      <div style="height:10px"></div>
+      <label for="ingestSection">Section reference</label>
+      <input type="text" id="ingestSection" placeholder="e.g. 290.44(h)(4)(A), 608.16.2, ASSE 1013">
+      <div style="height:10px"></div>
+      <label for="ingestContent">Clause text</label>
+      <textarea id="ingestContent" rows="6" placeholder="Paste the specific clause — targeted excerpts only, not the full standard."></textarea>
+      <button class="run-btn secondary" id="runIngestBtn">Add to library</button>
+      <div class="note">TCEQ text is public domain — safe to add freely. For IPC/ASSE, only add clauses you've personally confirmed matter for a real determination, since your access to those is read-only.</div>
+    </div>
+    <div class="results" id="ingestResults"></div>
+  </div>
+
+</main>
+
+<div class="toast" id="toast"></div>
+
+<script>
+const FUNCTIONS_BASE = "https://uzcgwzibwhubxftyhwvu.supabase.co/functions/v1";
+
+// tabs
+document.querySelectorAll('.tab').forEach(tab=>{
+  tab.addEventListener('click', ()=>{
+    document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));
+    document.querySelectorAll('.panel').forEach(p=>p.classList.remove('active'));
+    tab.classList.add('active');
+    document.getElementById('panel-' + tab.dataset.tab).classList.add('active');
+  });
+});
+
+// presets
+const PRESETS = [
+  "A commercial kitchen has a Jackson DishStar HTE dishwasher with a built-in chemical injection system (sanitizing rinse additive) connected to the potable supply. What hazard classification applies, and is an AVB sufficient or is an RPZ required?",
+  "A commercial property has a water softener using ion exchange resin on the main potable line. Under what conditions should this be upgraded from a DCVA to an RPZ?",
+  "A backflow prevention assembly protecting against a health hazard was installed six months ago and has not yet been tested. Is this a compliance issue, and what testing frequency applies?"
+];
+document.querySelectorAll('.preset-btn').forEach(btn=>{
+  btn.addEventListener('click', ()=>{ document.getElementById('scenario').value = PRESETS[btn.dataset.i]; });
+});
+
+function toast(msg, ok){
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.className = 'toast show ' + (ok ? 'ok' : 'err');
+  setTimeout(()=>{ t.className = 'toast'; }, 3500);
+}
+
+function renderPendingCard(container, id, name, isFinal){
+  container.innerHTML = '';
+  const div = document.createElement('div');
+  div.className = 'result-card' + (isFinal ? ' final' : '');
+  div.id = 'card-' + id;
+  div.innerHTML = `
+    <div class="result-head">
+      <span class="result-name">${name}</span>
+      <span class="result-badge pending"><span class="spinner"></span>running</span>
+    </div>
+    <div class="result-body">Contacting Supabase...</div>
+  `;
+  container.appendChild(div);
+}
+
+document.getElementById('runReviewBtn').addEventListener('click', async ()=>{
+  const scenario = document.getElementById('scenario').value.trim();
+  if(!scenario) return;
+  const btn = document.getElementById('runReviewBtn');
+  btn.disabled = true; btn.textContent = 'Running (this can take 20-40s)...';
+
+  const results = document.getElementById('reviewResults');
+  renderPendingCard(results, 'main', 'Four-agent review', true);
+
+  try{
+    const res = await fetch(`${FUNCTIONS_BASE}/agent-review`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ scenario })
+    });
+    const data = await res.json();
+    if(!res.ok || data.error){
+      throw new Error(data.error || `HTTP ${res.status}`);
+    }
+
+    const flagged = /SYSTEM FLAG/.test(data.final);
+    results.innerHTML = '';
+
+    const order = [
+      { key: 'tceq', name: 'TCEQ Agent — 30 TAC §290.44(h)' },
+      { key: 'ipc', name: 'IPC Agent — 2021 §608' },
+      { key: 'asse', name: 'ASSE Agent — device standards' },
+    ];
+    order.forEach(o=>{
+      const card = document.createElement('div');
+      card.className = 'result-card';
+      const hasFlag = /UNVERIFIED/i.test(data[o.key]);
+      card.innerHTML = `
+        <div class="result-head">
+          <span class="result-name">${o.name}</span>
+          <span class="result-badge ${hasFlag ? 'pending' : ''}">${hasFlag ? 'unverified content' : 'done'}</span>
+        </div>
+        <div class="result-body">${data[o.key]}</div>
+      `;
+      results.appendChild(card);
+    });
+
+    const finalCard = document.createElement('div');
+    finalCard.className = 'result-card final' + (flagged ? ' flagged' : '');
+    finalCard.innerHTML = `
+      <div class="result-head">
+        <span class="result-name">${flagged ? '⚠ Arbiter — human review required' : 'Arbiter — final determination'}</span>
+        <span class="result-badge">done</span>
+      </div>
+      <div class="result-body">${data.final}</div>
+    `;
+    results.appendChild(finalCard);
+
+    toast('Review complete', true);
+  }catch(e){
+    results.innerHTML = `<div class="result-card"><div class="result-head"><span class="result-name">Error</span><span class="result-badge error">failed</span></div><div class="result-body">${e.message}</div></div>`;
+    toast('Review failed — see details below', false);
+  }
+
+  btn.disabled = false; btn.textContent = 'Run four-agent review';
+});
+
+document.getElementById('runIngestBtn').addEventListener('click', async ()=>{
+  const source_body = document.getElementById('ingestBody').value;
+  const section_ref = document.getElementById('ingestSection').value.trim();
+  const content = document.getElementById('ingestContent').value.trim();
+  if(!section_ref || !content){ toast('Section reference and clause text are required', false); return; }
+
+  const btn = document.getElementById('runIngestBtn');
+  btn.disabled = true; btn.textContent = 'Adding...';
+
+  const results = document.getElementById('ingestResults');
+  renderPendingCard(results, 'ingest', 'Adding to library', false);
+
+  try{
+    const res = await fetch(`${FUNCTIONS_BASE}/ingest-reference`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ source_body, section_ref, content })
+    });
+    const data = await res.json();
+    if(!res.ok || data.error){
+      throw new Error(data.error || `HTTP ${res.status}`);
+    }
+    results.innerHTML = `<div class="result-card"><div class="result-head"><span class="result-name">Added</span><span class="result-badge">saved</span></div><div class="result-body">[${source_body}] ${section_ref}\n\n${content}</div></div>`;
+    document.getElementById('ingestSection').value = '';
+    document.getElementById('ingestContent').value = '';
+    toast('Clause added to library', true);
+  }catch(e){
+    results.innerHTML = `<div class="result-card"><div class="result-head"><span class="result-name">Error</span><span class="result-badge error">failed</span></div><div class="result-body">${e.message}</div></div>`;
+    toast('Failed to add clause', false);
+  }
+
+  btn.disabled = false; btn.textContent = 'Add to library';
+});
+</script>
+
+</body>
+</html>
