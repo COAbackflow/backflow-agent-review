@@ -147,9 +147,16 @@
 
     <div class="subpanel" id="subpanel-bulk">
     <div class="card">
-      <div class="note" style="margin-top:0;">Since TCEQ 290 text is public domain, you can paste multiple sections at once here. Separate each section with a line containing only <code>###</code>. First line of each block is the section number, everything after is the clause text.</div>
+      <label for="bulkSource">Source</label>
+      <select id="bulkSource">
+        <option value="TCEQ">TCEQ</option>
+        <option value="IPC">IPC 2021 §608</option>
+        <option value="ASSE">ASSE standard</option>
+      </select>
       <div style="height:10px"></div>
-      <label for="bulkContent">Bulk TCEQ sections</label>
+      <div class="note" id="bulkSourceNote" style="margin-top:0;">Paste multiple sections at once. Separate each section with a line containing only <code>###</code>. First line of each block is the section number, everything after is the clause text. Everything in this batch will be saved as <strong>TCEQ</strong>.</div>
+      <div style="height:10px"></div>
+      <label for="bulkContent">Bulk sections</label>
       <textarea id="bulkContent" rows="14" placeholder="290.44(h)(1)
 First section's text goes here...
 
@@ -234,7 +241,15 @@ document.getElementById('bulkContent').addEventListener('input', (e)=>{
     : 'No sections detected yet — check the ### separators.';
 });
 
+// Update bulk source note when dropdown changes
+document.getElementById('bulkSource').addEventListener('change', (e)=>{
+  const v = e.target.value;
+  document.getElementById('bulkSourceNote').innerHTML =
+    'Paste multiple sections at once. Separate each section with a line containing only <code>###</code>. First line of each block is the section number, everything after is the clause text. Everything in this batch will be saved as <strong>' + v + '</strong>.';
+});
+
 document.getElementById('runBulkBtn').addEventListener('click', async ()=>{
+  const bulkSourceVal = document.getElementById('bulkSource').value;
   const raw = document.getElementById('bulkContent').value;
   const items = parseBulkTceq(raw);
   if(items.length === 0){ toast('No sections detected — check formatting', false); return; }
@@ -246,7 +261,7 @@ document.getElementById('runBulkBtn').addEventListener('click', async ()=>{
   results.innerHTML = '';
   const list = document.createElement('div');
   list.className = 'result-card';
-  list.innerHTML = `<div class="result-head"><span class="result-name">Bulk upload — ${items.length} sections</span><span class="result-badge pending" id="bulk-progress-badge"><span class="spinner"></span>0 / ${items.length}</span></div><div class="result-body" id="bulk-log"></div>`;
+  list.innerHTML = `<div class="result-head"><span class="result-name">Bulk upload (${bulkSourceVal}) — ${items.length} sections</span><span class="result-badge pending" id="bulk-progress-badge"><span class="spinner"></span>0 / ${items.length}</span></div><div class="result-body" id="bulk-log"></div>`;
   results.appendChild(list);
   const log = document.getElementById('bulk-log');
   const badge = document.getElementById('bulk-progress-badge');
@@ -258,7 +273,7 @@ document.getElementById('runBulkBtn').addEventListener('click', async ()=>{
       const res = await fetch(`${FUNCTIONS_BASE}/ingest-reference`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ source_body: 'TCEQ', section_ref: item.section_ref, content: item.content })
+        body: JSON.stringify({ source_body: bulkSourceVal, section_ref: item.section_ref, content: item.content })
       });
       const data = await res.json();
       if(!res.ok || data.error) throw new Error(data.error || `HTTP ${res.status}`);
