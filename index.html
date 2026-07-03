@@ -74,12 +74,22 @@
   .subpanel{display:none;}
   .subpanel.active{display:block;}
   code{background:var(--panel-2);padding:1px 5px;border-radius:4px;font-family:var(--mono);color:var(--orange);}
+  .lib-filter{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px;}
+  .lib-chip{background:var(--panel-2);border:1px solid var(--line);color:var(--muted);font-family:var(--mono);font-size:11px;padding:7px 14px;border-radius:999px;cursor:pointer;}
+  .lib-chip.active{background:var(--orange);color:#1A0E04;font-weight:700;border-color:var(--orange);}
+  .lib-entry{background:var(--panel);border:1px solid var(--line);border-radius:10px;margin-bottom:10px;overflow:hidden;}
+  .lib-entry-head{display:flex;align-items:center;justify-content:space-between;padding:10px 14px;background:var(--panel-2);border-bottom:1px solid var(--line);}
+  .lib-source{font-family:var(--mono);font-size:10px;padding:3px 8px;border-radius:999px;font-weight:700;}
+  .lib-source.TCEQ{background:rgba(82,183,136,0.15);color:var(--green);}
+  .lib-source.IPC{background:rgba(217,164,65,0.15);color:var(--amber);}
+  .lib-source.ASSE{background:rgba(232,133,61,0.18);color:var(--orange);}
+  .lib-ref{font-family:var(--mono);font-size:12px;color:var(--text);font-weight:600;}
+  .lib-body{padding:12px 14px;font-size:13px;line-height:1.55;color:#D6E1EC;white-space:pre-wrap;}
 </style>
 </head>
 <body>
 
 <header>
-  <div class="eyebrow">Backflow Check Pro / live pipeline</div>
   <h1>Backflow Agent Review</h1>
   <div class="sub">Talks directly to your deployed Supabase project. Add reference clauses once, they stay saved forever — every scenario after that retrieves automatically.</div>
   <div class="status-line"><span class="status-dot"></span>Connected to uzcgwzibwhubxftyhwvu.supabase.co</div>
@@ -90,6 +100,7 @@
   <div class="tabs">
     <div class="tab active" data-tab="review">Run a scenario</div>
     <div class="tab" data-tab="ingest">Add reference clause</div>
+    <div class="tab" data-tab="library">View library</div>
   </div>
 
   <div class="panel active" id="panel-review">
@@ -174,6 +185,21 @@ Third section's text goes here..."></textarea>
 
   </div>
 
+  <div class="panel" id="panel-library">
+    <div class="card">
+      <label>Filter by source</label>
+      <div class="lib-filter">
+        <div class="lib-chip active" data-source="">All</div>
+        <div class="lib-chip" data-source="TCEQ">TCEQ</div>
+        <div class="lib-chip" data-source="IPC">IPC</div>
+        <div class="lib-chip" data-source="ASSE">ASSE</div>
+      </div>
+      <button class="run-btn secondary" id="refreshLibBtn">Load / refresh library</button>
+      <div class="note" id="libStatus">Click "Load / refresh library" to see everything currently stored as reference. Each agent only ever draws from its own source — TCEQ agent uses TCEQ entries, IPC agent uses IPC, ASSE agent uses ASSE.</div>
+    </div>
+    <div id="libResults"></div>
+  </div>
+
 </main>
 
 <div class="toast" id="toast"></div>
@@ -181,7 +207,7 @@ Third section's text goes here..."></textarea>
 <script>
 const FUNCTIONS_BASE = "https://uzcgwzibwhubxftyhwvu.supabase.co/functions/v1";
 
-// sub-tabs (single vs bulk)
+// sub-tabs (single vs bulk vs pdf)
 document.querySelectorAll('.subtab').forEach(tab=>{
   tab.addEventListener('click', ()=>{
     document.querySelectorAll('.subtab').forEach(t=>t.classList.remove('active'));
@@ -236,10 +262,10 @@ document.getElementById('runBulkBtn').addEventListener('click', async ()=>{
       });
       const data = await res.json();
       if(!res.ok || data.error) throw new Error(data.error || `HTTP ${res.status}`);
-      log.textContent += `✓ ${item.section_ref} added\n`;
+      log.textContent += `\u2713 ${item.section_ref} added\n`;
     }catch(e){
       failed++;
-      log.textContent += `✗ ${item.section_ref} failed: ${e.message}\n`;
+      log.textContent += `\u2717 ${item.section_ref} failed: ${e.message}\n`;
     }
     done++;
     badge.innerHTML = `<span class="spinner"></span>${done} / ${items.length}`;
@@ -353,7 +379,7 @@ document.getElementById('pdfFile').addEventListener('change', async (e)=>{
     pdfExtractedItems = data.results || [];
     let statusMsg = `Done — analyzed ${data.chunks_processed} section(s) of the document, found ${pdfExtractedItems.length} relevant passage(s).`;
     if(data.chunks_failed > 0){
-      statusMsg += ` ⚠ ${data.chunks_failed} chunk(s) failed and were skipped — results may be incomplete. First error: ${(data.errors && data.errors[0]) || 'unknown'}`;
+      statusMsg += ` \u26a0 ${data.chunks_failed} chunk(s) failed and were skipped — results may be incomplete. First error: ${(data.errors && data.errors[0]) || 'unknown'}`;
     }
     statusEl.textContent = statusMsg;
     renderPdfReview(pdfExtractedItems, sourceBody);
@@ -362,6 +388,8 @@ document.getElementById('pdfFile').addEventListener('change', async (e)=>{
     toast('PDF processing failed', false);
   }
 });
+
+// main tabs
 document.querySelectorAll('.tab').forEach(tab=>{
   tab.addEventListener('click', ()=>{
     document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));
@@ -402,6 +430,60 @@ function renderPendingCard(container, id, name, isFinal){
   `;
   container.appendChild(div);
 }
+
+// ---- View library ----
+let libFilter = "";
+document.querySelectorAll('.lib-chip').forEach(chip=>{
+  chip.addEventListener('click', ()=>{
+    document.querySelectorAll('.lib-chip').forEach(c=>c.classList.remove('active'));
+    chip.classList.add('active');
+    libFilter = chip.dataset.source;
+    loadLibrary();
+  });
+});
+
+function escapeHtml(s){
+  return String(s)
+    .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+async function loadLibrary(){
+  const status = document.getElementById('libStatus');
+  const results = document.getElementById('libResults');
+  status.textContent = 'Loading library...';
+  results.innerHTML = '';
+  try{
+    const res = await fetch(`${FUNCTIONS_BASE}/list-references`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(libFilter ? { source_body: libFilter } : {})
+    });
+    const data = await res.json();
+    if(!res.ok || data.error) throw new Error(data.error || `HTTP ${res.status}`);
+    const rows = data.rows || [];
+    if(rows.length === 0){
+      status.textContent = libFilter
+        ? `No ${libFilter} entries stored yet.`
+        : 'No reference entries stored yet. Add some from the "Add reference clause" tab.';
+      return;
+    }
+    status.textContent = `${rows.length} entr${rows.length === 1 ? 'y' : 'ies'}${libFilter ? ' in ' + libFilter : ' total'}.`;
+    results.innerHTML = rows.map(r => `
+      <div class="lib-entry">
+        <div class="lib-entry-head">
+          <span class="lib-ref">${escapeHtml(r.section_ref)}</span>
+          <span class="lib-source ${r.source_body}">${r.source_body}</span>
+        </div>
+        <div class="lib-body">${escapeHtml(r.content)}</div>
+      </div>
+    `).join('');
+  }catch(e){
+    status.textContent = 'Error loading library: ' + e.message;
+    toast('Failed to load library', false);
+  }
+}
+
+document.getElementById('refreshLibBtn').addEventListener('click', loadLibrary);
 
 document.getElementById('runReviewBtn').addEventListener('click', async ()=>{
   const scenario = document.getElementById('scenario').value.trim();
@@ -447,10 +529,11 @@ document.getElementById('runReviewBtn').addEventListener('click', async ()=>{
 
     const finalCard = document.createElement('div');
     finalCard.className = 'result-card final' + (flagged ? ' flagged' : '');
+    const providerLabel = data.provider_used ? ` \u00b7 ${data.provider_used}` : '';
     finalCard.innerHTML = `
       <div class="result-head">
-        <span class="result-name">${flagged ? '⚠ Arbiter — human review required' : 'Arbiter — final determination'}</span>
-        <span class="result-badge">done</span>
+        <span class="result-name">${flagged ? '\u26a0 Arbiter — human review required' : 'Arbiter — final determination'}</span>
+        <span class="result-badge">done${providerLabel}</span>
       </div>
       <div class="result-body">${data.final}</div>
     `;
