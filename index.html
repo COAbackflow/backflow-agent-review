@@ -127,8 +127,12 @@
   .cat-checks label{display:flex;align-items:center;gap:5px;font-family:var(--mono);font-size:11px;color:var(--text);text-transform:none;letter-spacing:0;margin:0;cursor:pointer;}
   .cat-checks input{width:auto;margin:0;}
   .lib-splits{padding:6px 14px 0;}
-  .split-section{margin-bottom:10px;border:1px solid var(--line);border-radius:8px;overflow:hidden;}
-  .split-head{background:var(--panel-2);padding:7px 12px;font-family:var(--mono);font-size:11px;color:var(--orange);font-weight:700;letter-spacing:0.04em;}
+  .split-section{margin-bottom:8px;border:1px solid var(--line);border-radius:8px;overflow:hidden;}
+  .split-head{background:var(--panel-2);padding:9px 12px;font-family:var(--mono);font-size:11px;color:var(--orange);font-weight:700;letter-spacing:0.04em;cursor:pointer;display:flex;align-items:center;justify-content:space-between;user-select:none;}
+  .split-head:hover{background:#12304d;}
+  .split-caret{font-size:10px;transition:transform 0.15s;color:var(--muted);}
+  .split-section.collapsed .split-caret{transform:rotate(-90deg);}
+  .split-section.collapsed .split-text,.split-section.collapsed .split-empty{display:none;}
   .split-text{padding:10px 12px;font-size:13px;line-height:1.55;color:#D6E1EC;white-space:pre-wrap;}
   .split-empty{padding:8px 12px;font-family:var(--mono);font-size:11px;color:var(--muted);font-style:italic;}
   .orig-toggle{font-family:var(--mono);font-size:11px;color:var(--muted);cursor:pointer;padding:8px 14px;display:inline-block;text-decoration:underline;}
@@ -606,7 +610,8 @@ function renderEntryBody(r){
     let out = '<div class="lib-splits">';
     order.forEach(k=>{
       const txt = (splits[k]||'').trim();
-      out += '<div class="split-section"><div class="split-head">' + (CAT_LABELS[k]||k) + '</div>';
+      const dot = txt ? '' : ' <span style="color:var(--muted);font-weight:400;">(empty)</span>';
+      out += '<div class="split-section collapsed"><div class="split-head" onclick="this.parentElement.classList.toggle(\'collapsed\')"><span>' + (CAT_LABELS[k]||k) + dot + '</span><span class="split-caret">\u25bc</span></div>';
       out += txt ? ('<div class="split-text">' + escapeHtml(txt) + '</div>')
                  : ('<div class="split-empty">\u2014 nothing in this entry for this category</div>');
       out += '</div>';
