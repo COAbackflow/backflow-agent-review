@@ -698,6 +698,49 @@ function escapeHtml(s){
     .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
 }
 
+// Natural sort for regulation section numbers.
+// Turns "608.17.6" -> [608,17,6], "290.44(h)(4)(A)" -> [290,44,'h',4,'A'],
+// "ASSE 1015 ..." -> [1015]. Un-numbered refs sort to the end.
+function sectionSortKey(ref){
+  if(!ref) return [Infinity];
+  // pull all number groups and letter-in-paren groups in order
+  const parts = [];
+  // match either a number (possibly decimal) or a single letter in parens or standalone letter tokens
+  const tokenRe = /(\d+)|\(([A-Za-z])\)|\b([A-Za-z])\b/g;
+  let m;
+  // First, if it starts with a big decimal like 290.44 or 608.17.6, split on dots too
+  const cleaned = ref.replace(/[A-Za-z]+\s+/,''); // drop leading words like "ASSE "
+  // Grab the first number-ish chunk (e.g. 290.44 or 608.17.6 or 1015)
+  const firstNum = cleaned.match(/\d+(?:\.\d+)*/);
+  if(firstNum){
+    firstNum[0].split('.').forEach(n => parts.push(parseInt(n,10)));
+  }
+  // Then capture any (letter) or (number) sub-parts after it, in order
+  const subRe = /\(([A-Za-z0-9]+)\)/g;
+  let sm;
+  while((sm = subRe.exec(ref)) !== null){
+    const v = sm[1];
+    parts.push(/^\d+$/.test(v) ? parseInt(v,10) : v.toLowerCase());
+  }
+  return parts.length ? parts : [Infinity];
+}
+function compareSections(a, b){
+  const ka = sectionSortKey(a.section_ref), kb = sectionSortKey(b.section_ref);
+  const len = Math.max(ka.length, kb.length);
+  for(let i=0;i<len;i++){
+    const x = ka[i], y = kb[i];
+    if(x === undefined) return -1;
+    if(y === undefined) return 1;
+    // numbers before letters; compare same-type directly
+    const xn = typeof x === 'number', yn = typeof y === 'number';
+    if(xn && !yn) return -1;
+    if(!xn && yn) return 1;
+    if(x < y) return -1;
+    if(x > y) return 1;
+  }
+  return 0;
+}
+
 function renderEntryBody(r){
   const splits = r.category_splits && typeof r.category_splits === 'object' ? r.category_splits : {};
   const order = ['rules','installation','applications','testing','hazard','device'];
@@ -745,6 +788,7 @@ async function loadLibrary(){
     if(libCatFilter){
       rows = rows.filter(r => Array.isArray(r.categories) && r.categories.includes(libCatFilter));
     }
+    rows.sort(compareSections); // always show in section-number order
     _libRows = rows;
     if(rows.length === 0){
       status.textContent = libFilter
