@@ -168,6 +168,11 @@
   .detail-section.collapsed .detail-body{display:none;}
   .detail-body{padding:14px;font-size:13.5px;line-height:1.6;white-space:pre-wrap;color:#D6E1EC;}
   .unv-tag{font-family:var(--mono);font-size:9px;padding:2px 7px;border-radius:999px;background:rgba(217,164,65,0.15);color:var(--amber);margin-left:8px;}
+  .photo-row{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px;}
+  .photo-btn{background:var(--panel-2);border:1px solid var(--line);color:var(--text);font-family:var(--mono);font-size:12px;padding:9px 14px;border-radius:8px;cursor:pointer;display:inline-flex;align-items:center;gap:6px;}
+  .photo-btn:hover{border-color:var(--orange);color:var(--orange);}
+  #photoStatus{font-size:12px;color:var(--muted);margin:6px 0;line-height:1.5;}
+  #photoPreview{max-width:220px;border-radius:8px;border:1px solid var(--line);margin:8px 0;display:none;}
 </style>
 </head>
 <body>
@@ -204,7 +209,16 @@
 
   <div class="panel active" id="panel-review">
     <div class="card">
-      <label for="scenario">Scenario</label>
+      <label>Photo of install (optional)</label>
+      <div class="photo-row">
+        <button type="button" class="photo-btn" id="addPhotoBtn">\ud83d\uddbc Add image</button>
+        <button type="button" class="photo-btn" id="takePhotoBtn">\ud83d\udcf7 Take photo</button>
+      </div>
+      <input type="file" id="photoInput" accept="image/*" style="display:none;">
+      <input type="file" id="cameraInput" accept="image/*" capture="environment" style="display:none;">
+      <img id="photoPreview" alt="preview">
+      <div id="photoStatus"></div>
+      <label for="scenario" style="margin-top:8px;">Scenario</label>
       <textarea id="scenario" rows="5">A backflow prevention assembly protecting against a health hazard was installed six months ago and has not yet been tested. Is this a compliance issue, and what testing frequency applies?</textarea>
       <div class="presets">
         <button class="preset-btn" data-i="0">Dishwasher chem injection</button>
@@ -573,6 +587,61 @@ document.querySelectorAll('.tab').forEach(tab=>{
 });
 
 // presets
+// --- Photo: shrink client-side, send to read-image, drop description into scenario ---
+function shrinkImage(file, maxDim, quality){
+  return new Promise((resolve, reject)=>{
+    const img = new Image();
+    const reader = new FileReader();
+    reader.onload = e => { img.src = e.target.result; };
+    reader.onerror = reject;
+    img.onload = ()=>{
+      let { width, height } = img;
+      if(width > height && width > maxDim){ height = Math.round(height * maxDim / width); width = maxDim; }
+      else if(height > maxDim){ width = Math.round(width * maxDim / height); height = maxDim; }
+      const canvas = document.createElement('canvas');
+      canvas.width = width; canvas.height = height;
+      canvas.getContext('2d').drawImage(img, 0, 0, width, height);
+      resolve(canvas.toDataURL('image/jpeg', quality));
+    };
+    img.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+}
+
+async function handlePhoto(file){
+  if(!file) return;
+  const status = document.getElementById('photoStatus');
+  const preview = document.getElementById('photoPreview');
+  try{
+    status.textContent = 'Shrinking image...';
+    // maxDim 1024, quality 0.7 keeps it small but readable — cheaper to send
+    const dataUrl = await shrinkImage(file, 1024, 0.7);
+    preview.src = dataUrl; preview.style.display = 'block';
+    status.textContent = 'Reading image with AI...';
+    const res = await fetch(`${FUNCTIONS_BASE}/read-image`, {
+      method: 'POST',
+      headers: await getAuthHeaders(),
+      body: JSON.stringify({ image_base64: dataUrl })
+    });
+    const data = await res.json();
+    if(!res.ok || data.error) throw new Error(data.error || `HTTP ${res.status}`);
+    // Put the description in the scenario box for the user to REVIEW/EDIT before running.
+    const box = document.getElementById('scenario');
+    const desc = data.description || '';
+    box.value = 'From photo (review & edit before running):\n' + desc;
+    status.textContent = '\u2713 Image read. Review the description below, edit anything the AI got wrong, then Run.';
+    toast('Image read — review the description', true);
+  }catch(e){
+    status.textContent = 'Error reading image: ' + e.message;
+    toast('Image read failed', false);
+  }
+}
+
+document.getElementById('addPhotoBtn').addEventListener('click', ()=> document.getElementById('photoInput').click());
+document.getElementById('takePhotoBtn').addEventListener('click', ()=> document.getElementById('cameraInput').click());
+document.getElementById('photoInput').addEventListener('change', e => handlePhoto(e.target.files[0]));
+document.getElementById('cameraInput').addEventListener('change', e => handlePhoto(e.target.files[0]));
+
 const PRESETS = [
   "A commercial kitchen has a Jackson DishStar HTE dishwasher with a built-in chemical injection system (sanitizing rinse additive) connected to the potable supply. What hazard classification applies, and is an AVB sufficient or is an RPZ required?",
   "A commercial property has a water softener using ion exchange resin on the main potable line. Under what conditions should this be upgraded from a DCVA to an RPZ?",
