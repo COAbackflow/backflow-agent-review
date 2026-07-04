@@ -117,6 +117,15 @@
   .lib-edit-actions button{font-family:var(--sans);font-size:13px;font-weight:600;padding:8px 16px;border-radius:8px;cursor:pointer;border:1px solid var(--line);}
   .lib-edit-actions .save{background:var(--orange);color:#1A0E04;border-color:var(--orange);}
   .lib-edit-actions .cancel{background:var(--panel-2);color:var(--text);}
+  .cat-filter{display:flex;gap:6px;flex-wrap:wrap;margin:10px 0 4px;}
+  .cat-chip{background:var(--panel-2);border:1px solid var(--line);color:var(--muted);font-family:var(--mono);font-size:10px;padding:6px 11px;border-radius:999px;cursor:pointer;}
+  .cat-chip.active{background:var(--orange);color:#1A0E04;font-weight:700;border-color:var(--orange);}
+  .lib-cats{display:flex;gap:5px;flex-wrap:wrap;padding:8px 14px 0;}
+  .lib-cat-tag{font-family:var(--mono);font-size:9px;padding:2px 7px;border-radius:999px;background:var(--panel-2);border:1px solid var(--line);color:var(--muted);}
+  .suggest-cat-btn{background:var(--panel-2);border:1px solid var(--orange);color:var(--orange);font-family:var(--mono);font-size:11px;padding:7px 12px;border-radius:8px;cursor:pointer;margin-bottom:8px;}
+  .cat-checks{display:flex;gap:10px;flex-wrap:wrap;margin:4px 0 10px;}
+  .cat-checks label{display:flex;align-items:center;gap:5px;font-family:var(--mono);font-size:11px;color:var(--text);text-transform:none;letter-spacing:0;margin:0;cursor:pointer;}
+  .cat-checks input{width:auto;margin:0;}
 </style>
 </head>
 <body>
@@ -249,6 +258,16 @@ Third section's text goes here..."></textarea>
         <div class="lib-chip" data-source="IPC">IPC</div>
         <div class="lib-chip" data-source="ASSE">ASSE</div>
       </div>
+      <label style="margin-top:12px;">Filter by category</label>
+      <div class="cat-filter">
+        <div class="cat-chip active" data-cat="">All</div>
+        <div class="cat-chip" data-cat="rules">Rules &amp; Regs</div>
+        <div class="cat-chip" data-cat="installation">Installation</div>
+        <div class="cat-chip" data-cat="applications">Applications</div>
+        <div class="cat-chip" data-cat="testing">Testing Freq</div>
+        <div class="cat-chip" data-cat="hazard">Hazard Class</div>
+        <div class="cat-chip" data-cat="device">Device Type</div>
+      </div>
       <button class="run-btn secondary" id="refreshLibBtn">Load / refresh library</button>
       <div class="note" id="libStatus">Click "Load / refresh library" to see everything currently stored as reference. Each agent only ever draws from its own source — TCEQ agent uses TCEQ entries, IPC agent uses IPC, ASSE agent uses ASSE.</div>
     </div>
@@ -260,6 +279,7 @@ Third section's text goes here..."></textarea>
 <div class="toast" id="toast"></div>
 
 <script>
+const CAT_LABELS = {rules:"Rules & Regs", installation:"Installation", applications:"Applications", testing:"Testing Freq", hazard:"Hazard Class", device:"Device Type"};
 const FUNCTIONS_BASE = "https://uzcgwzibwhubxftyhwvu.supabase.co/functions/v1";
 const SUPABASE_URL = "https://uzcgwzibwhubxftyhwvu.supabase.co";
 const SUPABASE_PUBLISHABLE_KEY = "sb_publishable_bZbl4Yw9ev-4-DscH_6JBA_QN1-RDoH";
@@ -544,6 +564,15 @@ function renderPendingCard(container, id, name, isFinal){
 
 // ---- View library ----
 let libFilter = "";
+let libCatFilter = "";
+document.querySelectorAll('.cat-chip').forEach(chip=>{
+  chip.addEventListener('click', ()=>{
+    document.querySelectorAll('.cat-chip').forEach(c=>c.classList.remove('active'));
+    chip.classList.add('active');
+    libCatFilter = chip.dataset.cat;
+    loadLibrary();
+  });
+});
 document.querySelectorAll('.lib-chip').forEach(chip=>{
   chip.addEventListener('click', ()=>{
     document.querySelectorAll('.lib-chip').forEach(c=>c.classList.remove('active'));
@@ -572,7 +601,10 @@ async function loadLibrary(){
     });
     const data = await res.json();
     if(!res.ok || data.error) throw new Error(data.error || `HTTP ${res.status}`);
-    const rows = data.rows || [];
+    let rows = data.rows || [];
+    if(libCatFilter){
+      rows = rows.filter(r => Array.isArray(r.categories) && r.categories.includes(libCatFilter));
+    }
     _libRows = rows;
     if(rows.length === 0){
       status.textContent = libFilter
@@ -592,6 +624,7 @@ async function loadLibrary(){
           </span>
         </div>
         <div class="lib-body">${escapeHtml(r.content)}</div>
+        ${(Array.isArray(r.categories) && r.categories.length) ? '<div class="lib-cats">' + r.categories.map(c => '<span class="lib-cat-tag">' + (CAT_LABELS[c]||c) + '</span>').join('') + '</div>' : ''}
       </div>
     `).join('');
     wireLibDeleteButtons();
@@ -671,6 +704,16 @@ function wireLibEditButtons(){
         <input type="text" class="edit-ref">
         <label>Content</label>
         <textarea class="edit-content" rows="8"></textarea>
+        <label>Categories</label>
+        <button class="suggest-cat-btn" type="button">✨ AI suggest categories</button>
+        <div class="cat-checks">
+          <label><input type="checkbox" class="cat-cb" value="rules"> Rules & Regs</label>
+          <label><input type="checkbox" class="cat-cb" value="installation"> Installation</label>
+          <label><input type="checkbox" class="cat-cb" value="applications"> Applications</label>
+          <label><input type="checkbox" class="cat-cb" value="testing"> Testing Freq</label>
+          <label><input type="checkbox" class="cat-cb" value="hazard"> Hazard Class</label>
+          <label><input type="checkbox" class="cat-cb" value="device"> Device Type</label>
+        </div>
         <div class="lib-edit-actions">
           <button class="save">Save changes</button>
           <button class="cancel">Cancel</button>
@@ -680,6 +723,36 @@ function wireLibEditButtons(){
       form.querySelector('.edit-source').value = row.source_body;
       form.querySelector('.edit-ref').value = row.section_ref;
       form.querySelector('.edit-content').value = row.content;
+      // pre-check existing categories
+      if(Array.isArray(row.categories)){
+        row.categories.forEach(c=>{
+          const cb = form.querySelector('.cat-cb[value="'+c+'"]');
+          if(cb) cb.checked = true;
+        });
+      }
+      // AI suggest button
+      form.querySelector('.suggest-cat-btn').addEventListener('click', async (ev)=>{
+        const sbtn = ev.target;
+        sbtn.disabled = true; sbtn.textContent = '✨ Thinking...';
+        try{
+          const res = await fetch(`${FUNCTIONS_BASE}/suggest-categories`, {
+            method: 'POST',
+            headers: await getAuthHeaders(),
+            body: JSON.stringify({ content: form.querySelector('.edit-content').value, section_ref: form.querySelector('.edit-ref').value })
+          });
+          const data = await res.json();
+          if(!res.ok || data.error) throw new Error(data.error || `HTTP ${res.status}`);
+          // check the suggested boxes (adds to whatever is already checked; user can adjust)
+          (data.categories||[]).forEach(c=>{
+            const cb = form.querySelector('.cat-cb[value="'+c+'"]');
+            if(cb) cb.checked = true;
+          });
+          toast('AI suggested ' + (data.categories||[]).length + ' categories — review & adjust', true);
+        }catch(e){
+          toast('Suggest failed: ' + e.message, false);
+        }
+        sbtn.disabled = false; sbtn.textContent = '✨ AI suggest categories';
+      });
 
       form.querySelector('.cancel').addEventListener('click', ()=>{ form.remove(); });
 
@@ -688,13 +761,14 @@ function wireLibEditButtons(){
         const newSource = form.querySelector('.edit-source').value;
         const newRef = form.querySelector('.edit-ref').value.trim();
         const newContent = form.querySelector('.edit-content').value.trim();
+        const newCats = Array.from(form.querySelectorAll('.cat-cb:checked')).map(cb=>cb.value);
         if(!newRef || !newContent){ toast('Section ref and content are required', false); return; }
         saveBtn.disabled = true; saveBtn.textContent = 'Saving...';
         try{
           const res = await fetch(`${FUNCTIONS_BASE}/update-reference`, {
             method: 'POST',
             headers: await getAuthHeaders(),
-            body: JSON.stringify({ id, source_body: newSource, section_ref: newRef, content: newContent })
+            body: JSON.stringify({ id, source_body: newSource, section_ref: newRef, content: newContent, categories: newCats })
           });
           const data = await res.json();
           if(!res.ok || data.error) throw new Error(data.error || `HTTP ${res.status}`);
