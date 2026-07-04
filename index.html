@@ -126,6 +126,17 @@
   .cat-checks{display:flex;gap:10px;flex-wrap:wrap;margin:4px 0 10px;}
   .cat-checks label{display:flex;align-items:center;gap:5px;font-family:var(--mono);font-size:11px;color:var(--text);text-transform:none;letter-spacing:0;margin:0;cursor:pointer;}
   .cat-checks input{width:auto;margin:0;}
+  .lib-splits{padding:6px 14px 0;}
+  .split-section{margin-bottom:10px;border:1px solid var(--line);border-radius:8px;overflow:hidden;}
+  .split-head{background:var(--panel-2);padding:7px 12px;font-family:var(--mono);font-size:11px;color:var(--orange);font-weight:700;letter-spacing:0.04em;}
+  .split-text{padding:10px 12px;font-size:13px;line-height:1.55;color:#D6E1EC;white-space:pre-wrap;}
+  .split-empty{padding:8px 12px;font-family:var(--mono);font-size:11px;color:var(--muted);font-style:italic;}
+  .orig-toggle{font-family:var(--mono);font-size:11px;color:var(--muted);cursor:pointer;padding:8px 14px;display:inline-block;text-decoration:underline;}
+  .orig-body{padding:0 14px 12px;font-size:12.5px;line-height:1.5;color:var(--muted);white-space:pre-wrap;display:none;}
+  .split-preview{border:1px solid var(--line);border-radius:8px;padding:10px;margin:8px 0;background:var(--panel-2);}
+  .split-preview .sp-head{font-family:var(--mono);font-size:10px;color:var(--orange);font-weight:700;margin-bottom:3px;}
+  .split-preview .sp-text{font-size:12.5px;line-height:1.5;color:#D6E1EC;margin-bottom:8px;white-space:pre-wrap;}
+  .split-preview .sp-empty{font-size:11px;color:var(--muted);font-style:italic;margin-bottom:8px;}
 </style>
 </head>
 <body>
@@ -587,6 +598,34 @@ function escapeHtml(s){
     .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
 }
 
+function renderEntryBody(r){
+  const splits = r.category_splits && typeof r.category_splits === 'object' ? r.category_splits : {};
+  const order = ['rules','installation','applications','testing','hazard','device'];
+  const hasSplits = order.some(k => splits[k] && splits[k].trim());
+  if(hasSplits){
+    let out = '<div class="lib-splits">';
+    order.forEach(k=>{
+      const txt = (splits[k]||'').trim();
+      out += '<div class="split-section"><div class="split-head">' + (CAT_LABELS[k]||k) + '</div>';
+      out += txt ? ('<div class="split-text">' + escapeHtml(txt) + '</div>')
+                 : ('<div class="split-empty">\u2014 nothing in this entry for this category</div>');
+      out += '</div>';
+    });
+    out += '</div>';
+    // original always available underneath
+    out += '<div class="orig-toggle" onclick="this.nextElementSibling.style.display = this.nextElementSibling.style.display===\'block\'?\'none\':\'block\'">Show / hide original text</div>';
+    out += '<div class="orig-body">' + escapeHtml(r.content) + '</div>';
+    return out;
+  } else {
+    // no splits yet: show full content + tags (old behavior)
+    let out = '<div class="lib-body">' + escapeHtml(r.content) + '</div>';
+    if(Array.isArray(r.categories) && r.categories.length){
+      out += '<div class="lib-cats">' + r.categories.map(c => '<span class="lib-cat-tag">' + (CAT_LABELS[c]||c) + '</span>').join('') + '</div>';
+    }
+    return out;
+  }
+}
+
 let _libRows = [];
 async function loadLibrary(){
   const status = document.getElementById('libStatus');
@@ -623,8 +662,7 @@ async function loadLibrary(){
             <button class="lib-del-btn" data-id="${r.id}" data-ref="${escapeHtml(r.section_ref)}">Remove</button>
           </span>
         </div>
-        <div class="lib-body">${escapeHtml(r.content)}</div>
-        ${(Array.isArray(r.categories) && r.categories.length) ? '<div class="lib-cats">' + r.categories.map(c => '<span class="lib-cat-tag">' + (CAT_LABELS[c]||c) + '</span>').join('') + '</div>' : ''}
+        ${renderEntryBody(r)}
       </div>
     `).join('');
     wireLibDeleteButtons();
@@ -705,7 +743,8 @@ function wireLibEditButtons(){
         <label>Content</label>
         <textarea class="edit-content" rows="8"></textarea>
         <label>Categories</label>
-        <button class="suggest-cat-btn" type="button">✨ AI suggest categories</button>
+        <button class="suggest-cat-btn" type="button">✨ AI split into categories</button>
+        <div class="split-preview-holder"></div>
         <div class="cat-checks">
           <label><input type="checkbox" class="cat-cb" value="rules"> Rules & Regs</label>
           <label><input type="checkbox" class="cat-cb" value="installation"> Installation</label>
@@ -730,28 +769,47 @@ function wireLibEditButtons(){
           if(cb) cb.checked = true;
         });
       }
-      // AI suggest button
+      // AI split-into-categories button
+      let _pendingSplits = (row.category_splits && typeof row.category_splits === 'object') ? row.category_splits : {};
+      const CAT_ORDER = ['rules','installation','applications','testing','hazard','device'];
+      const CAT_LBL = {rules:"Rules & Regs", installation:"Installation", applications:"Applications", testing:"Testing Freq", hazard:"Hazard Class", device:"Device Type"};
+      function renderSplitPreview(){
+        const holder = form.querySelector('.split-preview-holder');
+        const has = CAT_ORDER.some(k => _pendingSplits[k] && _pendingSplits[k].trim());
+        if(!has){ holder.innerHTML = ''; return; }
+        let out = '<div class="split-preview"><div class="sp-head" style="color:var(--muted);margin-bottom:8px;">PREVIEW — this is how the entry will break down (original text is always kept):</div>';
+        CAT_ORDER.forEach(k=>{
+          const txt = (_pendingSplits[k]||'').trim();
+          out += '<div class="sp-head">' + CAT_LBL[k] + '</div>';
+          out += txt ? ('<div class="sp-text">' + escapeHtml(txt) + '</div>') : ('<div class="sp-empty">— nothing for this category</div>');
+        });
+        out += '</div>';
+        holder.innerHTML = out;
+      }
+      renderSplitPreview();
       form.querySelector('.suggest-cat-btn').addEventListener('click', async (ev)=>{
         const sbtn = ev.target;
-        sbtn.disabled = true; sbtn.textContent = '✨ Thinking...';
+        sbtn.disabled = true; sbtn.textContent = '✨ Splitting...';
         try{
-          const res = await fetch(`${FUNCTIONS_BASE}/suggest-categories`, {
+          const res = await fetch(`${FUNCTIONS_BASE}/split-categories`, {
             method: 'POST',
             headers: await getAuthHeaders(),
             body: JSON.stringify({ content: form.querySelector('.edit-content').value, section_ref: form.querySelector('.edit-ref').value })
           });
           const data = await res.json();
-          if(!res.ok || data.error) throw new Error(data.error || `HTTP ${res.status}`);
-          // check the suggested boxes (adds to whatever is already checked; user can adjust)
-          (data.categories||[]).forEach(c=>{
-            const cb = form.querySelector('.cat-cb[value="'+c+'"]');
-            if(cb) cb.checked = true;
+          if(!res.ok || (data.error && !data.splits)) throw new Error(data.error || `HTTP ${res.status}`);
+          _pendingSplits = data.splits || {};
+          // auto-check category boxes for any non-empty split
+          CAT_ORDER.forEach(k=>{
+            const cb = form.querySelector('.cat-cb[value="'+k+'"]');
+            if(cb) cb.checked = !!(_pendingSplits[k] && _pendingSplits[k].trim());
           });
-          toast('AI suggested ' + (data.categories||[]).length + ' categories — review & adjust', true);
+          renderSplitPreview();
+          toast('Split complete — review the preview, adjust, then Save', true);
         }catch(e){
-          toast('Suggest failed: ' + e.message, false);
+          toast('Split failed: ' + e.message, false);
         }
-        sbtn.disabled = false; sbtn.textContent = '✨ AI suggest categories';
+        sbtn.disabled = false; sbtn.textContent = '✨ AI split into categories';
       });
 
       form.querySelector('.cancel').addEventListener('click', ()=>{ form.remove(); });
@@ -768,7 +826,7 @@ function wireLibEditButtons(){
           const res = await fetch(`${FUNCTIONS_BASE}/update-reference`, {
             method: 'POST',
             headers: await getAuthHeaders(),
-            body: JSON.stringify({ id, source_body: newSource, section_ref: newRef, content: newContent, categories: newCats })
+            body: JSON.stringify({ id, source_body: newSource, section_ref: newRef, content: newContent, categories: newCats, category_splits: _pendingSplits })
           });
           const data = await res.json();
           if(!res.ok || data.error) throw new Error(data.error || `HTTP ${res.status}`);
