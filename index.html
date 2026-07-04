@@ -108,6 +108,15 @@
   .lib-confirm button{font-family:var(--mono);font-size:10px;padding:3px 10px;border-radius:999px;cursor:pointer;border:1px solid var(--line);}
   .lib-confirm .yes{background:var(--red);color:#fff;border-color:var(--red);}
   .lib-confirm .no{background:var(--panel-2);color:var(--muted);}
+  .lib-edit-btn{background:transparent;border:1px solid var(--line);color:var(--muted);font-family:var(--mono);font-size:10px;padding:3px 9px;border-radius:999px;cursor:pointer;margin-left:8px;}
+  .lib-edit-btn:hover{border-color:var(--orange);color:var(--orange);}
+  .lib-edit-form{padding:12px 14px;border-top:1px solid var(--line);}
+  .lib-edit-form label{margin-top:8px;}
+  .lib-edit-form select,.lib-edit-form input,.lib-edit-form textarea{margin-bottom:8px;}
+  .lib-edit-actions{display:flex;gap:8px;margin-top:6px;}
+  .lib-edit-actions button{font-family:var(--sans);font-size:13px;font-weight:600;padding:8px 16px;border-radius:8px;cursor:pointer;border:1px solid var(--line);}
+  .lib-edit-actions .save{background:var(--orange);color:#1A0E04;border-color:var(--orange);}
+  .lib-edit-actions .cancel{background:var(--panel-2);color:var(--text);}
 </style>
 </head>
 <body>
@@ -549,6 +558,7 @@ function escapeHtml(s){
     .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
 }
 
+let _libRows = [];
 async function loadLibrary(){
   const status = document.getElementById('libStatus');
   const results = document.getElementById('libResults');
@@ -563,6 +573,7 @@ async function loadLibrary(){
     const data = await res.json();
     if(!res.ok || data.error) throw new Error(data.error || `HTTP ${res.status}`);
     const rows = data.rows || [];
+    _libRows = rows;
     if(rows.length === 0){
       status.textContent = libFilter
         ? `No ${libFilter} entries stored yet.`
@@ -576,6 +587,7 @@ async function loadLibrary(){
           <span class="lib-ref">${escapeHtml(r.section_ref)}</span>
           <span style="display:flex;align-items:center;">
             <span class="lib-source ${r.source_body}">${r.source_body}</span>
+            <button class="lib-edit-btn" data-id="${r.id}">Edit</button>
             <button class="lib-del-btn" data-id="${r.id}" data-ref="${escapeHtml(r.section_ref)}">Remove</button>
           </span>
         </div>
@@ -583,6 +595,7 @@ async function loadLibrary(){
       </div>
     `).join('');
     wireLibDeleteButtons();
+    wireLibEditButtons();
   }catch(e){
     status.textContent = 'Error loading library: ' + e.message;
     toast('Failed to load library', false);
@@ -629,6 +642,67 @@ function wireLibDeleteButtons(){
           toast('Failed to remove: ' + e.message, false);
           confirm.remove();
           btn.style.display = '';
+        }
+      });
+    });
+  });
+}
+
+// --- per-entry edit ---
+function wireLibEditButtons(){
+  document.querySelectorAll('.lib-edit-btn').forEach(btn=>{
+    btn.addEventListener('click', ()=>{
+      const id = btn.dataset.id;
+      const row = _libRows.find(r => String(r.id) === String(id));
+      if(!row) return;
+      const card = document.getElementById('lib-entry-' + id);
+      if(!card || card.querySelector('.lib-edit-form')) return; // already editing
+
+      const form = document.createElement('div');
+      form.className = 'lib-edit-form';
+      form.innerHTML = `
+        <label>Source</label>
+        <select class="edit-source">
+          <option value="TCEQ">TCEQ</option>
+          <option value="IPC">IPC 2021 §608</option>
+          <option value="ASSE">ASSE standard</option>
+        </select>
+        <label>Section reference</label>
+        <input type="text" class="edit-ref">
+        <label>Content</label>
+        <textarea class="edit-content" rows="8"></textarea>
+        <div class="lib-edit-actions">
+          <button class="save">Save changes</button>
+          <button class="cancel">Cancel</button>
+        </div>
+      `;
+      card.appendChild(form);
+      form.querySelector('.edit-source').value = row.source_body;
+      form.querySelector('.edit-ref').value = row.section_ref;
+      form.querySelector('.edit-content').value = row.content;
+
+      form.querySelector('.cancel').addEventListener('click', ()=>{ form.remove(); });
+
+      form.querySelector('.save').addEventListener('click', async ()=>{
+        const saveBtn = form.querySelector('.save');
+        const newSource = form.querySelector('.edit-source').value;
+        const newRef = form.querySelector('.edit-ref').value.trim();
+        const newContent = form.querySelector('.edit-content').value.trim();
+        if(!newRef || !newContent){ toast('Section ref and content are required', false); return; }
+        saveBtn.disabled = true; saveBtn.textContent = 'Saving...';
+        try{
+          const res = await fetch(`${FUNCTIONS_BASE}/update-reference`, {
+            method: 'POST',
+            headers: await getAuthHeaders(),
+            body: JSON.stringify({ id, source_body: newSource, section_ref: newRef, content: newContent })
+          });
+          const data = await res.json();
+          if(!res.ok || data.error) throw new Error(data.error || `HTTP ${res.status}`);
+          toast('Entry updated', true);
+          loadLibrary(); // refresh to show the edit
+        }catch(e){
+          toast('Failed to update: ' + e.message, false);
+          saveBtn.disabled = false; saveBtn.textContent = 'Save changes';
         }
       });
     });
