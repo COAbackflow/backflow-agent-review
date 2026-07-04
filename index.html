@@ -141,6 +141,33 @@
   .split-preview .sp-head{font-family:var(--mono);font-size:10px;color:var(--orange);font-weight:700;margin-bottom:3px;}
   .split-preview .sp-text{font-size:12.5px;line-height:1.5;color:#D6E1EC;margin-bottom:8px;white-space:pre-wrap;}
   .split-preview .sp-empty{font-size:11px;color:var(--muted);font-style:italic;margin-bottom:8px;}
+  .final-box{background:var(--panel);border:2px solid var(--orange);border-radius:12px;padding:18px;margin-bottom:14px;}
+  .final-box.flagged{border-color:var(--red);}
+  .final-title{font-family:var(--mono);font-size:11px;letter-spacing:0.1em;text-transform:uppercase;color:var(--orange);margin-bottom:12px;}
+  .final-box.flagged .final-title{color:var(--red);}
+  .final-facts{display:grid;grid-template-columns:1fr;gap:9px;}
+  .fact-row{display:flex;gap:10px;align-items:baseline;}
+  .fact-label{font-family:var(--mono);font-size:11px;color:var(--muted);min-width:120px;flex-shrink:0;}
+  .fact-value{font-size:15px;font-weight:600;color:var(--text);}
+  .fact-value.big{font-size:17px;}
+  .review-flag{margin-top:12px;padding:9px 12px;background:rgba(232,90,65,0.12);border:1px solid var(--red);border-radius:8px;color:#F5B4A6;font-size:12.5px;font-weight:600;}
+  .glance-box{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:14px;margin-bottom:14px;}
+  .glance-title{font-family:var(--mono);font-size:11px;letter-spacing:0.08em;text-transform:uppercase;color:var(--muted);margin-bottom:10px;}
+  .glance-row{display:flex;gap:10px;padding:7px 0;border-bottom:1px solid var(--line);}
+  .glance-row:last-child{border-bottom:none;}
+  .glance-agency{font-family:var(--mono);font-size:11px;font-weight:700;min-width:52px;flex-shrink:0;}
+  .glance-agency.tceq{color:var(--green);}
+  .glance-agency.ipc{color:var(--amber);}
+  .glance-agency.asse{color:var(--orange);}
+  .glance-text{font-size:13px;line-height:1.5;color:#D6E1EC;}
+  .detail-section{background:var(--panel);border:1px solid var(--line);border-radius:10px;margin-bottom:8px;overflow:hidden;}
+  .detail-head{background:var(--panel-2);padding:11px 14px;font-family:var(--mono);font-size:12px;font-weight:700;cursor:pointer;display:flex;justify-content:space-between;align-items:center;user-select:none;color:var(--text);}
+  .detail-head:hover{background:#12304d;}
+  .detail-caret{font-size:10px;color:var(--muted);transition:transform 0.15s;}
+  .detail-section.collapsed .detail-caret{transform:rotate(-90deg);}
+  .detail-section.collapsed .detail-body{display:none;}
+  .detail-body{padding:14px;font-size:13.5px;line-height:1.6;white-space:pre-wrap;color:#D6E1EC;}
+  .unv-tag{font-family:var(--mono);font-size:9px;padding:2px 7px;border-radius:999px;background:rgba(217,164,65,0.15);color:var(--amber);margin-left:8px;}
 </style>
 </head>
 <body>
@@ -869,36 +896,78 @@ document.getElementById('runReviewBtn').addEventListener('click', async ()=>{
     const flagged = /SYSTEM FLAG/.test(data.final);
     results.innerHTML = '';
 
-    const order = [
-      { key: 'tceq', name: 'TCEQ Agent — 30 TAC §290.44(h)' },
-      { key: 'ipc', name: 'IPC Agent — 2021 §608' },
-      { key: 'asse', name: 'ASSE Agent — device standards' },
-    ];
-    order.forEach(o=>{
-      const card = document.createElement('div');
-      card.className = 'result-card';
-      const hasFlag = /UNVERIFIED/i.test(data[o.key]);
-      card.innerHTML = `
-        <div class="result-head">
-          <span class="result-name">${o.name}</span>
-          <span class="result-badge ${hasFlag ? 'pending' : ''}">${hasFlag ? 'unverified content' : 'done'}</span>
-        </div>
-        <div class="result-body">${data[o.key]}</div>
-      `;
-      results.appendChild(card);
-    });
+    // Parse the arbiter's ===SUMMARY=== block out of data.final
+    function parseSummary(finalText){
+      const sum = {};
+      const m = finalText.split('===DETAIL===')[0];
+      const grab = (key)=>{
+        const re = new RegExp(key + ':\\s*(.+)');
+        const mm = m.match(re);
+        return mm ? mm[1].trim() : '';
+      };
+      sum.compliance = grab('COMPLIANCE_ISSUE');
+      sum.hazard = grab('HAZARD');
+      sum.device = grab('DEVICE');
+      sum.testing = grab('TESTING');
+      sum.review = grab('REVIEW');
+      sum.tceq = grab('TCEQ_ONELINE');
+      sum.ipc = grab('IPC_ONELINE');
+      sum.asse = grab('ASSE_ONELINE');
+      return sum;
+    }
+    // The detail portion (everything after ===DETAIL===), or whole thing if no marker
+    function detailPart(finalText){
+      const parts = finalText.split('===DETAIL===');
+      let d = parts.length > 1 ? parts[1] : finalText;
+      // strip the leading SYSTEM FLAG banner from detail (we show flag separately)
+      return d.trim();
+    }
 
-    const finalCard = document.createElement('div');
-    finalCard.className = 'result-card final' + (flagged ? ' flagged' : '');
-    const providerLabel = data.provider_used ? ` \u00b7 ${data.provider_used}` : '';
-    finalCard.innerHTML = `
-      <div class="result-head">
-        <span class="result-name">${flagged ? '\u26a0 Arbiter — human review required' : 'Arbiter — final determination'}</span>
-        <span class="result-badge">done${providerLabel}</span>
-      </div>
-      <div class="result-body">${data.final}</div>
-    `;
-    results.appendChild(finalCard);
+    const sum = parseSummary(data.final);
+    const needReview = flagged || /^yes/i.test(sum.review||'');
+
+    // 1) FINAL answer box (scannable)
+    const fbox = document.createElement('div');
+    fbox.className = 'final-box' + (needReview ? ' flagged' : '');
+    let facts = '';
+    if(sum.compliance) facts += `<div class="fact-row"><span class="fact-label">Compliance issue</span><span class="fact-value big">${escapeHtml(sum.compliance)}</span></div>`;
+    if(sum.hazard) facts += `<div class="fact-row"><span class="fact-label">Hazard class</span><span class="fact-value">${escapeHtml(sum.hazard)}</span></div>`;
+    if(sum.device) facts += `<div class="fact-row"><span class="fact-label">Required device</span><span class="fact-value">${escapeHtml(sum.device)}</span></div>`;
+    if(sum.testing) facts += `<div class="fact-row"><span class="fact-label">Testing frequency</span><span class="fact-value">${escapeHtml(sum.testing)}</span></div>`;
+    fbox.innerHTML = `<div class="final-title">${needReview ? '\u26a0 Final determination — human review required' : 'Final determination'}</div>
+      <div class="final-facts">${facts || '<div class="fact-value">See detail below</div>'}</div>
+      ${needReview ? '<div class="review-flag">\u26a0\ufe0f One or more agents could not verify part of this against the stored library (marked UNVERIFIED). Check the detail before relying on this.</div>' : ''}`;
+    results.appendChild(fbox);
+
+    // 2) At-a-glance per-agency one-liners
+    if(sum.tceq || sum.ipc || sum.asse){
+      const gbox = document.createElement('div');
+      gbox.className = 'glance-box';
+      gbox.innerHTML = `<div class="glance-title">At a glance</div>
+        ${sum.tceq ? '<div class="glance-row"><span class="glance-agency tceq">TCEQ</span><span class="glance-text">'+escapeHtml(sum.tceq)+'</span></div>' : ''}
+        ${sum.ipc ? '<div class="glance-row"><span class="glance-agency ipc">IPC</span><span class="glance-text">'+escapeHtml(sum.ipc)+'</span></div>' : ''}
+        ${sum.asse ? '<div class="glance-row"><span class="glance-agency asse">ASSE</span><span class="glance-text">'+escapeHtml(sum.asse)+'</span></div>' : ''}`;
+      results.appendChild(gbox);
+    }
+
+    // 3) Collapsible full detail for each agent + arbiter
+    const detailItems = [
+      { name: 'TCEQ Agent — 30 TAC §290.44(h)', text: data.tceq },
+      { name: 'IPC Agent — 2021 §608', text: data.ipc },
+      { name: 'ASSE Agent — device standards', text: data.asse },
+      { name: 'Arbiter — full reasoning', text: detailPart(data.final) },
+    ];
+    detailItems.forEach(it=>{
+      const unv = /UNVERIFIED/i.test(it.text);
+      const sec = document.createElement('div');
+      sec.className = 'detail-section collapsed';
+      sec.innerHTML = `<div class="detail-head" onclick="this.parentElement.classList.toggle('collapsed')">
+          <span>${it.name}${unv ? '<span class="unv-tag">unverified content</span>' : ''}</span>
+          <span class="detail-caret">\u25bc</span>
+        </div>
+        <div class="detail-body">${escapeHtml(it.text)}</div>`;
+      results.appendChild(sec);
+    });
 
     toast('Review complete', true);
   }catch(e){
