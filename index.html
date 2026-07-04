@@ -101,6 +101,13 @@
   #signOutBtn{background:var(--panel-2);border:1px solid var(--line);color:var(--muted);font-family:var(--mono);font-size:11px;padding:5px 12px;border-radius:999px;cursor:pointer;}
   #signOutBtn:hover{border-color:var(--orange);color:var(--text);}
   #userBadge{font-family:var(--mono);font-size:11px;color:var(--muted);margin-right:auto;padding-top:4px;}
+  .lib-del-btn{background:transparent;border:1px solid var(--line);color:var(--muted);font-family:var(--mono);font-size:10px;padding:3px 9px;border-radius:999px;cursor:pointer;margin-left:8px;}
+  .lib-del-btn:hover{border-color:var(--red);color:var(--red);}
+  .lib-confirm{display:flex;align-items:center;gap:8px;margin-left:8px;}
+  .lib-confirm span{font-family:var(--mono);font-size:10px;color:var(--red);}
+  .lib-confirm button{font-family:var(--mono);font-size:10px;padding:3px 10px;border-radius:999px;cursor:pointer;border:1px solid var(--line);}
+  .lib-confirm .yes{background:var(--red);color:#fff;border-color:var(--red);}
+  .lib-confirm .no{background:var(--panel-2);color:var(--muted);}
 </style>
 </head>
 <body>
@@ -564,14 +571,18 @@ async function loadLibrary(){
     }
     status.textContent = `${rows.length} entr${rows.length === 1 ? 'y' : 'ies'}${libFilter ? ' in ' + libFilter : ' total'}.`;
     results.innerHTML = rows.map(r => `
-      <div class="lib-entry">
+      <div class="lib-entry" id="lib-entry-${r.id}">
         <div class="lib-entry-head">
           <span class="lib-ref">${escapeHtml(r.section_ref)}</span>
-          <span class="lib-source ${r.source_body}">${r.source_body}</span>
+          <span style="display:flex;align-items:center;">
+            <span class="lib-source ${r.source_body}">${r.source_body}</span>
+            <button class="lib-del-btn" data-id="${r.id}" data-ref="${escapeHtml(r.section_ref)}">Remove</button>
+          </span>
         </div>
         <div class="lib-body">${escapeHtml(r.content)}</div>
       </div>
     `).join('');
+    wireLibDeleteButtons();
   }catch(e){
     status.textContent = 'Error loading library: ' + e.message;
     toast('Failed to load library', false);
@@ -579,6 +590,50 @@ async function loadLibrary(){
 }
 
 document.getElementById('refreshLibBtn').addEventListener('click', loadLibrary);
+
+// --- per-entry delete with confirm ---
+function wireLibDeleteButtons(){
+  document.querySelectorAll('.lib-del-btn').forEach(btn=>{
+    btn.addEventListener('click', ()=>{
+      const id = btn.dataset.id;
+      const ref = btn.dataset.ref;
+      // replace the button with a yes/no confirm
+      const holder = btn.parentElement;
+      const confirm = document.createElement('span');
+      confirm.className = 'lib-confirm';
+      confirm.innerHTML = `<span>Remove this entry?</span>
+        <button class="yes">Yes</button>
+        <button class="no">No</button>`;
+      btn.style.display = 'none';
+      holder.appendChild(confirm);
+
+      confirm.querySelector('.no').addEventListener('click', ()=>{
+        confirm.remove();
+        btn.style.display = '';
+      });
+      confirm.querySelector('.yes').addEventListener('click', async ()=>{
+        confirm.querySelector('.yes').textContent = '...';
+        try{
+          const res = await fetch(`${FUNCTIONS_BASE}/delete-reference`, {
+            method: 'POST',
+            headers: await getAuthHeaders(),
+            body: JSON.stringify({ id })
+          });
+          const data = await res.json();
+          if(!res.ok || data.error) throw new Error(data.error || `HTTP ${res.status}`);
+          // remove the entry card from the page
+          const card = document.getElementById('lib-entry-' + id);
+          if(card) card.remove();
+          toast(`Removed ${ref}`, true);
+        }catch(e){
+          toast('Failed to remove: ' + e.message, false);
+          confirm.remove();
+          btn.style.display = '';
+        }
+      });
+    });
+  });
+}
 
 document.getElementById('runReviewBtn').addEventListener('click', async ()=>{
   const scenario = document.getElementById('scenario').value.trim();
